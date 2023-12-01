@@ -1,13 +1,20 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
-
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 5000;
 const jwt = require("jsonwebtoken");
-
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+const formData = require("form-data");
+const Mailgun = require("mailgun.js");
+const mailgun = new Mailgun(formData);
+
+const mg = mailgun.client({
+  username: "api",
+  key: process.env.MAIL_GUN_API_KEY,
+});
 
 //middleware
 app.use(cors());
@@ -235,6 +242,24 @@ async function run() {
 
       const deleteResult = await cartsCollection.deleteMany(query);
 
+      //send user email about payment confirmation
+      mg.messages
+        .create(process.env.MAIL_SENDING_DOMAIN, {
+          from: "Mailgun Sandbox <postmaster@sandboxbabac048993e47c2a19fd24348456751.mailgun.org>",
+          to: ["moniru005@gmail.com"],
+          subject: "Bistro Boss Order Confirmation",
+          text: "Testing some Mailgun awesomness!",
+          html: `
+            <div>
+            <h2> Thank You for your order</h2>
+            <h4>Your Transaction Id: <strong>${payment.transactionId}</strong> </h4>
+            <p>We would like to your feedback about food</p>
+            </div>
+          `
+        })
+        .then((msg) => console.log(msg)) // logs response data
+        .catch((err) => console.log(err)); // logs any error`;
+
       res.send({ paymentResult, deleteResult });
     });
 
@@ -299,18 +324,18 @@ async function run() {
           {
             $group: {
               _id: "$menuItems.category",
-              quantity: {$sum: 1},
-              revenue: {$sum: '$menuItems.price'}
+              quantity: { $sum: 1 },
+              revenue: { $sum: "$menuItems.price" },
             },
           },
           {
             $project: {
               _id: 0,
-              category: '$_id',
-              quantity: '$quantity',
-              revenue: '$revenue'
-            }
-          }
+              category: "$_id",
+              quantity: "$quantity",
+              revenue: "$revenue",
+            },
+          },
         ])
         .toArray();
       res.send(result);
